@@ -1,21 +1,22 @@
 """
-App de Recursos APIT Cantabria
-Recursos turísticos y Restaurantes
+Base de datos para guías
+Recursos y Restaurantes
+Formularios internos + Google Apps Script + Google Sheets
 """
 
 import streamlit as st
 import pandas as pd
 from datetime import date
+from io import StringIO
+import textwrap
 import requests
 import re
+import html as html_lib
+from urllib.parse import urlparse
 
-
-# ─────────────────────────────────────────────
-# CONFIG
-# ─────────────────────────────────────────────
 
 st.set_page_config(
-    page_title="APIT Cantabria",
+    page_title="AppitCant",
     page_icon="logo_apit.png",
     layout="centered",
     initial_sidebar_state="collapsed",
@@ -30,6 +31,100 @@ URLS = {
     "experiencias_restaurantes": f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/gviz/tq?tqx=out:csv&sheet=experiencias_restaurantes",
 }
 
+REQUIRED_COLUMNS = {
+    "recursos": {"recurso", "municipio"},
+    "contenidos_recursos": {"recurso"},
+    "restaurantes": {"restaurante", "municipio"},
+    "experiencias_restaurantes": {"restaurante"},
+}
+
+TRUE_VALUES = {"true", "verdadero", "si", "sí", "yes", "1", "x"}
+
+
+# ─────────────────────────────────────────────
+# UTILIDADES
+# ─────────────────────────────────────────────
+
+def html(s: str) -> str:
+    return textwrap.dedent(s).strip()
+
+
+def esc(value) -> str:
+    if pd.isna(value):
+        return ""
+    return html_lib.escape(str(value))
+
+
+def safe_key(texto: str) -> str:
+    texto = str(texto).lower().strip()
+    texto = re.sub(r"[^a-z0-9áéíóúñü]+", "_", texto)
+    return texto.strip("_")
+
+
+def safe_external_url(value) -> str:
+    if pd.isna(value):
+        return ""
+
+    url = str(value).strip()
+    parsed = urlparse(url)
+
+    if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+        return ""
+
+    return url
+
+
+def normalize_bool(value) -> bool:
+    if pd.isna(value):
+        return False
+
+    if isinstance(value, bool):
+        return value
+
+    return str(value).strip().lower() in TRUE_VALUES
+
+
+def normalize_columns(df: pd.DataFrame) -> pd.DataFrame:
+    df = df.copy()
+    df.columns = (
+        df.columns
+        .str.strip()
+        .str.lower()
+        .str.replace(" ", "_", regex=False)
+    )
+    return df
+
+
+def validate_columns(name: str, df: pd.DataFrame) -> None:
+    missing = REQUIRED_COLUMNS.get(name, set()) - set(df.columns)
+
+    if missing:
+        missing_str = ", ".join(sorted(missing))
+        raise ValueError(f"La hoja '{name}' no contiene estas columnas: {missing_str}")
+
+
+def add_years_safe(value: date, years: int) -> date:
+    try:
+        return date(value.year + years, value.month, value.day)
+    except ValueError:
+        return date(value.year + years, value.month, 28)
+
+
+def read_remote_csv(url: str) -> pd.DataFrame:
+    response = requests.get(url, timeout=10)
+    response.raise_for_status()
+    return pd.read_csv(StringIO(response.text))
+
+
+def normalize_rating(value) -> int:
+    rating = pd.to_numeric(value, errors="coerce")
+
+    if pd.isna(rating):
+        return 0
+
+    return max(0, min(5, int(round(rating))))
+
+
 DIAS_ES = {
     0: "lunes",
     1: "martes",
@@ -42,127 +137,11 @@ DIAS_ES = {
 
 
 # ─────────────────────────────────────────────
-# UTILIDADES
-# ─────────────────────────────────────────────
-
-def safe_key(texto: str) -> str:
-    texto = str(texto).lower().strip()
-    texto = re.sub(r"[^a-z0-9áéíóúñü]+", "_", texto)
-    return texto.strip("_")
-
-
-def limpiar(valor) -> str:
-    if pd.isna(valor):
-        return ""
-    return str(valor).strip()
-
-
-def mensaje_error_envio():
-    st.error(
-        "No ha sido posible enviar la información. "
-        "Inténtalo de nuevo más tarde o contacta con APIT Cantabria."
-    )
-
-
-# ─────────────────────────────────────────────
-# ESTÉTICA
-# ─────────────────────────────────────────────
-
-def inject_css():
-    st.markdown(
-        """
-        <style>
-        .block-container {
-            max-width: 760px;
-            padding-top: 1.2rem;
-            padding-bottom: 4rem;
-        }
-
-        .apit-header {
-            text-align: center;
-            padding: 1.1rem 0 0.9rem;
-            margin-bottom: 0.8rem;
-        }
-
-        .apit-title {
-            color: #004EA8;
-            font-weight: 800;
-            font-size: 1.55rem;
-            margin: 0.35rem 0 0.1rem;
-            letter-spacing: -0.02em;
-        }
-
-        .apit-subtitle {
-            color: #4b5563;
-            font-size: 0.9rem;
-            margin-bottom: 0.15rem;
-        }
-
-        .apit-small {
-            color: #6b7280;
-            font-size: 0.76rem;
-        }
-
-        .section-header {
-            background: linear-gradient(135deg, #004EA8 0%, #00843D 100%);
-            color: white;
-            padding: 0.75rem 1rem;
-            border-radius: 12px;
-            margin: 0.6rem 0 1rem;
-            font-weight: 700;
-            font-size: 1rem;
-        }
-
-        div[data-testid="stForm"] {
-            border: 1px solid #e5e7eb;
-            border-radius: 12px;
-            padding: 0.85rem;
-            background: #fbfdff;
-        }
-
-        .stButton button {
-            border-radius: 8px;
-        }
-
-        .footer {
-            text-align: center;
-            color: #6b7280;
-            font-size: 0.74rem;
-            margin-top: 2rem;
-            padding-bottom: 1rem;
-        }
-        </style>
-        """,
-        unsafe_allow_html=True,
-    )
-
-
-def cabecera():
-    st.markdown('<div class="apit-header">', unsafe_allow_html=True)
-
-    try:
-        st.image("logo_apit.png", width=92)
-    except Exception:
-        st.markdown("### APIT")
-
-    st.markdown(
-        """
-        <div class="apit-title">App de Recursos y Restaurantes</div>
-        <div class="apit-subtitle">De guías para guías</div>
-        <div class="apit-small">Recursos turísticos · Restaurantes · Experiencias</div>
-        """,
-        unsafe_allow_html=True,
-    )
-
-    st.markdown("</div>", unsafe_allow_html=True)
-
-
-# ─────────────────────────────────────────────
 # GOOGLE APPS SCRIPT
 # ─────────────────────────────────────────────
 
 def post_to_apps_script(payload: dict):
-    payload["token"] = st.secrets["APPS_SCRIPT_TOKEN"]
+    payload = {**payload, "token": st.secrets["APPS_SCRIPT_TOKEN"]}
 
     response = requests.post(
         st.secrets["APPS_SCRIPT_URL"],
@@ -210,7 +189,7 @@ def save_resena_restaurante(data: dict):
 
 
 # ─────────────────────────────────────────────
-# DATOS
+# CARGA DE DATOS
 # ─────────────────────────────────────────────
 
 @st.cache_data(ttl=600)
@@ -218,14 +197,8 @@ def load_data():
     dfs = {}
 
     for key, url in URLS.items():
-        df = pd.read_csv(url)
-
-        df.columns = (
-            df.columns
-            .str.strip()
-            .str.lower()
-            .str.replace(" ", "_")
-        )
+        df = normalize_columns(read_remote_csv(url))
+        validate_columns(key, df)
 
         for col in [
             "fecha_inicio",
@@ -240,6 +213,12 @@ def load_data():
                     dayfirst=True,
                     errors="coerce",
                 )
+
+        if "activo" in df.columns:
+            df["activo"] = df["activo"].apply(normalize_bool)
+
+        if "rating" in df.columns:
+            df["rating"] = pd.to_numeric(df["rating"], errors="coerce")
 
         dfs[key] = df
 
@@ -256,11 +235,15 @@ def fila_es_fecha(row: pd.Series, fecha: date) -> bool:
     if pd.notna(fin) and fecha > fin.date():
         return False
 
-    dias_str = str(row.get("dias_semana", "") or "").strip()
+    dias_str = str(row.get("dias_semana", "") or "").strip().lower()
 
     if dias_str:
         dia = DIAS_ES[fecha.weekday()]
-        dias = [d.strip().lower() for d in dias_str.split("-")]
+        dias = [
+            d.strip()
+            for d in re.split(r"\s*(?:-|,|;|/|\by\b)\s*", dias_str)
+            if d.strip()
+        ]
 
         if dia not in dias:
             return False
@@ -282,14 +265,227 @@ def filtrar_contenido(df: pd.DataFrame, recurso: str, fecha: date) -> pd.DataFra
 
 
 # ─────────────────────────────────────────────
+# ESTILOS
+# ─────────────────────────────────────────────
+
+def inject_css():
+    st.markdown(html("""
+    <style>
+    .block-container {
+        max-width: 720px;
+        padding: 1rem 1rem 4rem;
+    }
+
+    .app-header {
+        margin: 0.4rem 0 1.6rem;
+    }
+
+    .app-title {
+        color: #004EA8;
+        font-size: 1.95rem;
+        font-weight: 800;
+        line-height: 1.15;
+        margin: 1rem 0 0.45rem;
+    }
+
+    .app-subtitle {
+        color: #374151;
+        font-size: 0.98rem;
+        margin: 0 0 0.35rem;
+    }
+
+    .app-meta {
+        color: #6b7280;
+        font-size: 0.84rem;
+        margin: 0 0 1.15rem;
+    }
+
+    div.stButton > button:first-child {
+        border: 1px solid #d1d5db;
+        border-radius: 8px;
+        background: #ffffff;
+        color: #111827;
+        font-weight: 500;
+        padding: 0.55rem 0.85rem;
+        box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
+    }
+
+    div.stButton > button:first-child:hover {
+        border-color: #004EA8;
+        color: #004EA8;
+    }
+
+    .section-header {
+        background: linear-gradient(135deg, #1a4a6b 0%, #0d7c9e 100%);
+        color: white;
+        padding: 0.75rem 1rem;
+        border-radius: 10px;
+        margin-bottom: 1rem;
+        font-weight: 600;
+    }
+
+    .card {
+        background: #ffffff;
+        border: 1px solid #e5e9ef;
+        border-radius: 12px;
+        padding: 1rem;
+        margin-bottom: 0.85rem;
+        box-shadow: 0 1px 4px rgba(0,0,0,.06);
+    }
+
+    .card-title {
+        font-weight: 700;
+        font-size: 1rem;
+        color: #1a2e40;
+        margin-bottom: 0.4rem;
+    }
+
+    .badge {
+        display: inline-block;
+        background: #e0f2fe;
+        color: #0369a1;
+        border-radius: 20px;
+        padding: 0.15rem 0.65rem;
+        font-size: 0.72rem;
+        font-weight: 600;
+        margin-right: 0.3rem;
+        margin-bottom: 0.2rem;
+    }
+
+    .badge-green {
+        background: #dcfce7;
+        color: #15803d;
+    }
+
+    .badge-amber {
+        background: #fef9c3;
+        color: #92400e;
+    }
+
+    .bloque {
+        background: #f4f8fc;
+        border-left: 3px solid #0d7c9e;
+        border-radius: 0 8px 8px 0;
+        padding: 0.55rem 0.8rem;
+        margin-bottom: 0.45rem;
+    }
+
+    .bloque-label {
+        font-size: 0.7rem;
+        font-weight: 600;
+        color: #0d7c9e;
+        text-transform: uppercase;
+    }
+
+    .bloque-subtipo {
+        font-weight: 600;
+        color: #1a2e40;
+        font-size: 0.87rem;
+    }
+
+    .bloque-contenido {
+        color: #374151;
+        font-size: 0.87rem;
+    }
+
+    .disclaimer {
+        background: #fffbeb;
+        border: 1px solid #fcd34d;
+        border-radius: 8px;
+        padding: 0.55rem 0.8rem;
+        margin-top: 0.6rem;
+        font-size: 0.78rem;
+        color: #78350f;
+    }
+
+    .no-results {
+        text-align: center;
+        color: #6b7280;
+        padding: 1.5rem 1rem;
+        font-size: 0.9rem;
+    }
+    </style>
+    """), unsafe_allow_html=True)
+
+
+# ─────────────────────────────────────────────
+# BLOQUES VISUALES
+# ─────────────────────────────────────────────
+
+def build_bloque(bloque_tipo, subtipo, contenido, fuente):
+    fuente_html = (
+        f'<br><small style="color:#9ca3af">Fuente: {esc(fuente)}</small>'
+        if fuente else ""
+    )
+
+    return (
+        '<div class="bloque">'
+        f'<div class="bloque-label">{esc(bloque_tipo)}</div>'
+        f'<div class="bloque-subtipo">{esc(subtipo)}</div>'
+        f'<div class="bloque-contenido">{esc(contenido)}{fuente_html}</div>'
+        '</div>'
+    )
+
+
+def build_disclaimer(web, ultima_act):
+    web_link = ""
+    safe_web = safe_external_url(web)
+
+    if safe_web:
+        web_link = f' · <a href="{esc(safe_web)}" target="_blank" rel="noopener noreferrer">Web oficial</a>'
+
+    if pd.notna(ultima_act) and ultima_act:
+        try:
+            fecha_act = pd.to_datetime(ultima_act).strftime("%d/%m/%Y")
+            act_str = f" · Última actualización: <strong>{fecha_act}</strong>"
+        except Exception:
+            act_str = ""
+    else:
+        act_str = ""
+
+    return (
+        '<div class="disclaimer">'
+        '<strong>Aviso:</strong> La información puede estar desactualizada. '
+        'Contrástela con la fuente oficial antes de utilizarla.'
+        f'{web_link}{act_str}'
+        '</div>'
+    )
+
+
+def build_resena(r_stars, guia, fecha_str, n_p, comentario):
+    return (
+        '<div style="border-top:1px solid #e5e9ef;'
+        'padding-top:0.5rem;margin-top:0.5rem;">'
+        f'<div style="font-size:0.78rem;color:#6b7a8d;">'
+        f'{esc(r_stars)} · {esc(guia)} · {esc(fecha_str)} · {esc(n_p)} pax'
+        '</div>'
+        f'<div style="font-size:0.85rem;color:#374151;margin-top:0.2rem;">'
+        f'{esc(comentario)}'
+        '</div>'
+        '</div>'
+    )
+
+
+# ─────────────────────────────────────────────
 # FORMULARIOS
 # ─────────────────────────────────────────────
 
-def formulario_incidencia(tipo, categoria, nombre, municipio=""):
-    form_key = f"form_incidencia_{safe_key(tipo)}_{safe_key(categoria)}_{safe_key(nombre)}"
+def mensaje_error_envio():
+    st.error(
+        "No ha sido posible enviar la información. "
+        "Inténtelo de nuevo más tarde o contacte con APIT Cantabria."
+    )
+
+
+def formulario_incidencia(tipo, categoria, nombre, municipio="", item_key=""):
+    key_parts = [tipo, categoria, municipio, nombre, item_key]
+    form_key = "form_incidencia_" + "_".join(
+        safe_key(part) for part in key_parts if str(part).strip()
+    )
 
     with st.expander("Reportar dato incorrecto", expanded=False):
         with st.form(form_key):
+
             guia = st.text_input(
                 "Nombre del guía",
                 placeholder="Nombre y apellidos",
@@ -324,10 +520,7 @@ def formulario_incidencia(tipo, categoria, nombre, municipio=""):
                         "descripcion": descripcion,
                     })
 
-                    st.success(
-                        "Gracias. La información ha sido registrada "
-                        "y será revisada por APIT Cantabria."
-                    )
+                    st.success("Gracias. La información ha sido registrada y será revisada por APIT Cantabria.")
 
                 except Exception:
                     mensaje_error_envio()
@@ -336,13 +529,14 @@ def formulario_incidencia(tipo, categoria, nombre, municipio=""):
 def formulario_nuevo_recurso():
     with st.expander("Proponer nuevo recurso turístico", expanded=False):
         with st.form("form_nuevo_recurso"):
+
             guia = st.text_input("Nombre del guía", placeholder="Nombre y apellidos")
             nombre = st.text_input("Nombre del recurso")
             municipio = st.text_input("Municipio")
 
             descripcion = st.text_area(
                 "Información básica",
-                placeholder="Indique web oficial, horarios, datos útiles o motivo por el que debería añadirse.",
+                placeholder="Indique web oficial, horarios, datos útiles o motivo por el que debería añadirse."
             )
 
             enviar = st.form_submit_button("Enviar")
@@ -367,10 +561,7 @@ def formulario_nuevo_recurso():
                         "descripcion": descripcion,
                     })
 
-                    st.success(
-                        "Gracias. La propuesta ha sido registrada "
-                        "y será revisada por APIT Cantabria."
-                    )
+                    st.success("Gracias. La propuesta ha sido registrada y será revisada por APIT Cantabria.")
 
                 except Exception:
                     mensaje_error_envio()
@@ -379,13 +570,14 @@ def formulario_nuevo_recurso():
 def formulario_nuevo_restaurante():
     with st.expander("Proponer nuevo restaurante", expanded=False):
         with st.form("form_nuevo_restaurante"):
+
             guia = st.text_input("Nombre del guía", placeholder="Nombre y apellidos")
             nombre = st.text_input("Nombre del restaurante")
             municipio = st.text_input("Municipio")
 
             descripcion = st.text_area(
                 "Información básica",
-                placeholder="Indique si admite grupos, precio aproximado, experiencia con grupos o cualquier dato útil.",
+                placeholder="Indique si admite grupos, precio aproximado, experiencia con grupos o cualquier dato útil."
             )
 
             enviar = st.form_submit_button("Enviar")
@@ -410,20 +602,21 @@ def formulario_nuevo_restaurante():
                         "descripcion": descripcion,
                     })
 
-                    st.success(
-                        "Gracias. La propuesta ha sido registrada "
-                        "y será revisada por APIT Cantabria."
-                    )
+                    st.success("Gracias. La propuesta ha sido registrada y será revisada por APIT Cantabria.")
 
                 except Exception:
                     mensaje_error_envio()
 
 
-def formulario_nueva_resena_restaurante(nombre, municipio=""):
-    form_key = f"form_resena_{safe_key(nombre)}"
+def formulario_nueva_resena_restaurante(nombre, municipio="", item_key=""):
+    key_parts = [municipio, nombre, item_key]
+    form_key = "form_resena_" + "_".join(
+        safe_key(part) for part in key_parts if str(part).strip()
+    )
 
     with st.expander("Añadir reseña", expanded=False):
         with st.form(form_key):
+
             guia = st.text_input(
                 "Nombre del guía",
                 placeholder="Nombre y apellidos",
@@ -501,9 +694,8 @@ def formulario_nueva_resena_restaurante(nombre, municipio=""):
                 except Exception:
                     mensaje_error_envio()
 
-
 # ─────────────────────────────────────────────
-# RECURSOS
+# MÓDULO RECURSOS
 # ─────────────────────────────────────────────
 
 def modulo_recursos(dfs):
@@ -511,7 +703,7 @@ def modulo_recursos(dfs):
     contenidos_df = dfs["contenidos_recursos"]
 
     hoy = date.today()
-    fecha_max = date(hoy.year + 2, hoy.month, hoy.day)
+    fecha_max = add_years_safe(hoy, 2)
 
     col_fecha, col_muni = st.columns([1, 1])
 
@@ -534,7 +726,10 @@ def modulo_recursos(dfs):
     formulario_nuevo_recurso()
 
     if muni == "Seleccione un municipio...":
-        st.info("Seleccione un municipio para consultar los recursos disponibles.")
+        st.markdown(
+            '<div class="no-results">Seleccione un municipio para consultar los recursos disponibles.</div>',
+            unsafe_allow_html=True,
+        )
         return
 
     df_fil = recursos_df.copy()
@@ -550,89 +745,76 @@ def modulo_recursos(dfs):
         df_fil = df_fil.sort_values("recurso")
 
     if df_fil.empty:
-        st.info("No hay recursos registrados para el municipio seleccionado.")
+        st.markdown(
+            '<div class="no-results">No hay recursos registrados para el municipio seleccionado.</div>',
+            unsafe_allow_html=True,
+        )
         return
 
     st.markdown(f"**{len(df_fil)} recurso(s) encontrado(s)**")
 
-    for _, rec in df_fil.iterrows():
-        nombre = limpiar(rec.get("recurso", ""))
-        municipio = limpiar(rec.get("municipio", ""))
-        tipo_rec = limpiar(rec.get("tipo", ""))
-        web = limpiar(rec.get("web_oficial", ""))
+    for idx, rec in df_fil.iterrows():
+        nombre = rec["recurso"]
+        municipio = rec.get("municipio", "")
+        tipo_rec = rec.get("tipo", "")
+        web = rec.get("web_oficial", "")
         ultima_act = rec.get("ultima_actualizacion", None)
 
         contenido_fecha = filtrar_contenido(contenidos_df, nombre, fecha_sel)
 
-        with st.container(border=True):
-            st.markdown(f"### {nombre}")
-            st.caption(f"{municipio} · {tipo_rec}")
+        if not contenido_fecha.empty and "bloque" in contenido_fecha.columns:
+            bloques_html = ""
 
-            if contenido_fecha.empty or "bloque" not in contenido_fecha.columns:
-                st.info("No hay información registrada para la fecha consultada.")
-            else:
-                for bloque_tipo, grupo in contenido_fecha.groupby("bloque"):
-                    st.markdown(f"**{limpiar(bloque_tipo).upper()}**")
-
-                    for _, fila in grupo.iterrows():
-                        subtipo = limpiar(fila.get("subtipo", ""))
-                        contenido = limpiar(fila.get("contenido", ""))
-                        fuente = limpiar(fila.get("fuente", ""))
-
-                        if subtipo:
-                            st.markdown(f"**{subtipo}**")
-
-                        if contenido:
-                            st.write(contenido)
-
-                        if fuente:
-                            st.caption(f"Fuente: {fuente}")
-
-                    st.divider()
-
-            st.warning(
-                "La información puede estar desactualizada. "
-                "Contrástela con la fuente oficial antes de utilizarla."
+            for bloque_tipo, grupo in contenido_fecha.groupby("bloque"):
+                for _, fila in grupo.iterrows():
+                    bloques_html += build_bloque(
+                        bloque_tipo,
+                        fila.get("subtipo", "") or "",
+                        fila.get("contenido", "") or "",
+                        fila.get("fuente", "") or "",
+                    )
+        else:
+            bloques_html = (
+                '<small style="color:#6b7280">'
+                'No hay información registrada para la fecha consultada.'
+                '</small>'
             )
 
-            if web:
-                st.link_button("Web oficial", web)
-
-            if pd.notna(ultima_act):
-                try:
-                    st.caption(
-                        "Última actualización: "
-                        + pd.to_datetime(ultima_act).strftime("%d/%m/%Y")
-                    )
-                except Exception:
-                    pass
+        st.markdown(f"""
+        <div class="card">
+            <div class="card-title">🏛️ {esc(nombre)}</div>
+            <div>
+                <span class="badge">{esc(municipio)}</span>
+                <span class="badge badge-amber">{esc(tipo_rec)}</span>
+            </div>
+            {bloques_html}
+            {build_disclaimer(web, ultima_act)}
+        </div>
+        """, unsafe_allow_html=True)
 
         formulario_incidencia(
             tipo="recurso",
             categoria="correccion",
             nombre=nombre,
             municipio=municipio,
+            item_key=idx,
         )
 
 
 # ─────────────────────────────────────────────
-# RESTAURANTES
+# MÓDULO RESTAURANTES
 # ─────────────────────────────────────────────
 
 def modulo_restaurantes(dfs):
     rest_df = dfs["restaurantes"]
-    exp_df = dfs["experiencias_restaurantes"].copy()
+    exp_df = dfs["experiencias_restaurantes"]
 
     if not exp_df.empty and "rating" in exp_df.columns:
-        exp_df["rating"] = pd.to_numeric(exp_df["rating"], errors="coerce")
-
         rating_medio = (
-            exp_df.dropna(subset=["rating"])
-            .groupby("restaurante")["rating"]
+            exp_df.groupby("restaurante")["rating"]
             .agg(rating_medio="mean", n_resenas="count")
             .reset_index()
         )
-
         rest_df = rest_df.merge(rating_medio, on="restaurante", how="left")
     else:
         rest_df["rating_medio"] = None
@@ -665,20 +847,20 @@ def modulo_restaurantes(dfs):
     st.markdown(f"**{len(df_fil)} restaurante(s) encontrado(s)**")
 
     for _, row in df_fil.iterrows():
-        nombre = limpiar(row.get("restaurante", ""))
-        municipio = limpiar(row.get("municipio", ""))
-        grupos = limpiar(row.get("admite_grupos", ""))
+        nombre = row["restaurante"]
+        municipio = row.get("municipio", "")
+        grupos = row.get("admite_grupos", "")
         precio = row.get("precio_menu_grupos", None)
         rating = row.get("rating_medio", None)
         n_res = int(row.get("n_resenas", 0)) if pd.notna(row.get("n_resenas")) else 0
 
         with st.container(border=True):
-            st.markdown(f"### {nombre}")
+            st.markdown(f"**{nombre}**")
             st.caption(municipio)
 
             etiquetas = []
 
-            if grupos.upper() in ["SÍ", "SI", "YES"]:
+            if str(grupos).upper() in ["SÍ", "SI", "YES"]:
                 etiquetas.append("Admite grupos")
 
             if pd.notna(precio):
@@ -688,7 +870,7 @@ def modulo_restaurantes(dfs):
                 st.write(" · ".join(etiquetas))
 
             if pd.notna(rating):
-                estrellas = int(round(rating))
+                estrellas = normalize_rating(rating)
                 stars_str = "⭐" * estrellas + "☆" * (5 - estrellas)
                 st.write(f"{stars_str} {rating:.1f}/5 ({n_res} reseña(s))")
             else:
@@ -697,11 +879,7 @@ def modulo_restaurantes(dfs):
             resenas = exp_df[exp_df["restaurante"] == nombre].copy()
 
             if "fecha" in resenas.columns:
-                resenas["fecha"] = pd.to_datetime(
-                    resenas["fecha"],
-                    dayfirst=True,
-                    errors="coerce",
-                )
+                resenas["fecha"] = pd.to_datetime(resenas["fecha"], errors="coerce")
                 resenas = resenas.sort_values("fecha", ascending=False)
 
             if resenas.empty:
@@ -714,42 +892,60 @@ def modulo_restaurantes(dfs):
                         else ""
                     )
 
-                    rating_res = pd.to_numeric(res.get("rating", 0), errors="coerce")
-                    rating_res = int(rating_res) if pd.notna(rating_res) else 0
-                    r_stars = "⭐" * rating_res
+                    r_stars = "⭐" * normalize_rating(res.get("rating", 0))
 
-                    st.divider()
+                    st.markdown("---")
                     st.caption(
-                        f"{r_stars} · {limpiar(res.get('guia', ''))} · "
-                        f"{fecha_str} · {limpiar(res.get('num_personas', ''))} pax"
+                        f"{r_stars} · {res.get('guia', '')} · "
+                        f"{fecha_str} · {res.get('num_personas', '')} pax"
                     )
-                    st.write(limpiar(res.get("comentario", "")))
+                    st.write(res.get("comentario", ""))
 
         formulario_incidencia(
             tipo="restaurante",
             categoria="correccion",
             nombre=nombre,
             municipio=municipio,
+            item_key=row.name,
         )
 
         formulario_nueva_resena_restaurante(
             nombre=nombre,
             municipio=municipio,
+            item_key=row.name,
         )
-
 
 # ─────────────────────────────────────────────
 # APP PRINCIPAL
 # ─────────────────────────────────────────────
 
+def render_header():
+    st.markdown('<div class="app-header">', unsafe_allow_html=True)
+    st.image("logo_apit.png", width=92)
+    st.markdown(
+        """
+        <h1 class="app-title">App de Recursos y Restaurantes</h1>
+        <p class="app-subtitle">De guías para guías</p>
+        <p class="app-meta">Recursos turísticos · Restaurantes · Experiencias</p>
+        """,
+        unsafe_allow_html=True,
+    )
+
+    if st.button("Actualizar datos", key="refresh_header"):
+        st.cache_data.clear()
+        st.rerun()
+
+    st.markdown('</div>', unsafe_allow_html=True)
+
+
 def main():
     inject_css()
-    cabecera()
+    render_header()
 
     try:
-        with st.spinner("Cargando información…"):
+        with st.spinner("Cargando datos…"):
             dfs = load_data()
-
+            
     except Exception:
         st.error(
             "No ha sido posible cargar la información. "
@@ -757,20 +953,11 @@ def main():
         )
         return
 
-    col_ref, _ = st.columns([1, 3])
-
-    with col_ref:
-        if st.button("Actualizar datos"):
-            st.cache_data.clear()
-            st.rerun()
-
-    st.divider()
-
     tab_rec, tab_rest = st.tabs(["Recursos", "Restaurantes"])
 
     with tab_rec:
         st.markdown(
-            '<div class="section-header">Recursos turísticos</div>',
+            '<div class="section-header">Recursos Turísticos</div>',
             unsafe_allow_html=True,
         )
         modulo_recursos(dfs)
@@ -783,13 +970,10 @@ def main():
         modulo_restaurantes(dfs)
 
     st.markdown(
-        """
-        <div class="footer">
-        APIT Cantabria<br>
-        Asociación Profesional de Guías Oficiales de Turismo de Cantabria<br>
-        Uso interno para profesionales.
-        </div>
-        """,
+        '<div style="text-align:center;color:#9ca3af;'
+        'font-size:0.72rem;margin-top:2rem;padding-bottom:1rem;">'
+        'GuíaHub · Información para uso profesional interno'
+        '</div>',
         unsafe_allow_html=True,
     )
 
