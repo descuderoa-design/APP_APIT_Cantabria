@@ -388,6 +388,35 @@ def inject_css():
         font-size: 0.87rem;
     }
 
+    .reviews-title {
+        color: #1a2e40;
+        font-size: 0.78rem;
+        font-weight: 700;
+        margin: 0.85rem 0 0.25rem;
+        text-transform: uppercase;
+    }
+
+    .review {
+        background: #f9fafb;
+        border: 1px solid #e5e9ef;
+        border-radius: 8px;
+        padding: 0.6rem 0.75rem;
+        margin-top: 0.5rem;
+    }
+
+    .review-meta {
+        color: #6b7280;
+        font-size: 0.78rem;
+        font-weight: 600;
+        margin-bottom: 0.25rem;
+    }
+
+    .review-comment {
+        color: #374151;
+        font-size: 0.87rem;
+        line-height: 1.45;
+    }
+
     .disclaimer {
         background: #fffbeb;
         border: 1px solid #fcd34d;
@@ -454,12 +483,11 @@ def build_disclaimer(web, ultima_act):
 
 def build_resena(r_stars, guia, fecha_str, n_p, comentario):
     return (
-        '<div style="border-top:1px solid #e5e9ef;'
-        'padding-top:0.5rem;margin-top:0.5rem;">'
-        f'<div style="font-size:0.78rem;color:#6b7a8d;">'
+        '<div class="review">'
+        '<div class="review-meta">'
         f'{esc(r_stars)} · {esc(guia)} · {esc(fecha_str)} · {esc(n_p)} pax'
         '</div>'
-        f'<div style="font-size:0.85rem;color:#374151;margin-top:0.2rem;">'
+        '<div class="review-comment">'
         f'{esc(comentario)}'
         '</div>'
         '</div>'
@@ -854,52 +882,70 @@ def modulo_restaurantes(dfs):
         rating = row.get("rating_medio", None)
         n_res = int(row.get("n_resenas", 0)) if pd.notna(row.get("n_resenas")) else 0
 
-        with st.container(border=True):
-            st.markdown(f"**{nombre}**")
-            st.caption(municipio)
+        etiquetas_html = f'<span class="badge">{esc(municipio)}</span>'
 
-            etiquetas = []
+        if str(grupos).strip().upper() in ["SÍ", "SI", "YES", "TRUE", "VERDADERO"]:
+            etiquetas_html += '<span class="badge badge-green">Admite grupos</span>'
 
-            if str(grupos).upper() in ["SÍ", "SI", "YES"]:
-                etiquetas.append("Admite grupos")
+        if pd.notna(precio) and str(precio).strip():
+            etiquetas_html += f'<span class="badge badge-amber">Menú grupo: {esc(precio)} €/p.</span>'
 
-            if pd.notna(precio):
-                etiquetas.append(f"Menú grupo: {precio} €/p.")
+        if pd.notna(rating):
+            estrellas = normalize_rating(rating)
+            stars_str = "⭐" * estrellas + "☆" * (5 - estrellas)
+            rating_html = (
+                '<div class="bloque">'
+                '<div class="bloque-label">Valoración media</div>'
+                f'<div class="bloque-contenido">{esc(stars_str)} {rating:.1f}/5 '
+                f'({n_res} reseña(s))</div>'
+                '</div>'
+            )
+        else:
+            rating_html = (
+                '<div class="bloque">'
+                '<div class="bloque-label">Valoración media</div>'
+                '<div class="bloque-contenido">Sin reseñas aún</div>'
+                '</div>'
+            )
 
-            if etiquetas:
-                st.write(" · ".join(etiquetas))
+        resenas = exp_df[exp_df["restaurante"] == nombre].copy()
 
-            if pd.notna(rating):
-                estrellas = normalize_rating(rating)
-                stars_str = "⭐" * estrellas + "☆" * (5 - estrellas)
-                st.write(f"{stars_str} {rating:.1f}/5 ({n_res} reseña(s))")
-            else:
-                st.caption("Sin reseñas aún")
+        if "fecha" in resenas.columns:
+            resenas["fecha"] = pd.to_datetime(resenas["fecha"], errors="coerce")
+            resenas = resenas.sort_values("fecha", ascending=False)
 
-            resenas = exp_df[exp_df["restaurante"] == nombre].copy()
+        if resenas.empty:
+            resenas_html = (
+                '<div class="reviews-title">Experiencias</div>'
+                '<small style="color:#6b7280">Sin reseñas registradas.</small>'
+            )
+        else:
+            resenas_html = '<div class="reviews-title">Últimas experiencias</div>'
 
-            if "fecha" in resenas.columns:
-                resenas["fecha"] = pd.to_datetime(resenas["fecha"], errors="coerce")
-                resenas = resenas.sort_values("fecha", ascending=False)
+            for _, res in resenas.head(3).iterrows():
+                fecha_str = (
+                    pd.to_datetime(res["fecha"]).strftime("%d/%m/%Y")
+                    if pd.notna(res.get("fecha"))
+                    else ""
+                )
 
-            if resenas.empty:
-                st.caption("Sin reseñas registradas.")
-            else:
-                for _, res in resenas.head(3).iterrows():
-                    fecha_str = (
-                        pd.to_datetime(res["fecha"]).strftime("%d/%m/%Y")
-                        if pd.notna(res.get("fecha"))
-                        else ""
-                    )
+                r_stars = "⭐" * normalize_rating(res.get("rating", 0))
+                resenas_html += build_resena(
+                    r_stars,
+                    res.get("guia", ""),
+                    fecha_str,
+                    res.get("num_personas", ""),
+                    res.get("comentario", ""),
+                )
 
-                    r_stars = "⭐" * normalize_rating(res.get("rating", 0))
-
-                    st.markdown("---")
-                    st.caption(
-                        f"{r_stars} · {res.get('guia', '')} · "
-                        f"{fecha_str} · {res.get('num_personas', '')} pax"
-                    )
-                    st.write(res.get("comentario", ""))
+        st.markdown(f"""
+        <div class="card">
+            <div class="card-title">🍽️ {esc(nombre)}</div>
+            <div>{etiquetas_html}</div>
+            {rating_html}
+            {resenas_html}
+        </div>
+        """, unsafe_allow_html=True)
 
         formulario_incidencia(
             tipo="restaurante",
