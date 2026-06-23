@@ -39,6 +39,8 @@ REQUIRED_COLUMNS = {
 }
 
 TRUE_VALUES = {"true", "verdadero", "si", "sí", "yes", "1", "x"}
+SELECT_MUNICIPIO = "Seleccione un municipio..."
+TODOS_MUNICIPIOS = "Todos"
 
 
 # ─────────────────────────────────────────────
@@ -746,14 +748,14 @@ def modulo_recursos(dfs):
         )
 
     with col_muni:
-        municipios = ["Seleccione un municipio..."] + sorted(
+        municipios = [SELECT_MUNICIPIO, TODOS_MUNICIPIOS] + sorted(
             recursos_df["municipio"].dropna().unique()
         )
         muni = st.selectbox("Municipio", municipios, key="rec_muni")
 
     formulario_nuevo_recurso()
 
-    if muni == "Seleccione un municipio...":
+    if muni == SELECT_MUNICIPIO:
         st.markdown(
             '<div class="no-results">Seleccione un municipio para consultar los recursos disponibles.</div>',
             unsafe_allow_html=True,
@@ -765,7 +767,8 @@ def modulo_recursos(dfs):
     if "activo" in df_fil.columns:
         df_fil = df_fil[df_fil["activo"] == True]
 
-    df_fil = df_fil[df_fil["municipio"] == muni]
+    if muni != TODOS_MUNICIPIOS:
+        df_fil = df_fil[df_fil["municipio"] == muni]
 
     if "prioridad" in df_fil.columns:
         df_fil = df_fil.sort_values(["prioridad", "recurso"])
@@ -773,10 +776,12 @@ def modulo_recursos(dfs):
         df_fil = df_fil.sort_values("recurso")
 
     if df_fil.empty:
-        st.markdown(
-            '<div class="no-results">No hay recursos registrados para el municipio seleccionado.</div>',
-            unsafe_allow_html=True,
+        mensaje = (
+            "No hay recursos registrados."
+            if muni == TODOS_MUNICIPIOS
+            else "No hay recursos registrados para el municipio seleccionado."
         )
+        st.markdown(f'<div class="no-results">{mensaje}</div>', unsafe_allow_html=True)
         return
 
     st.markdown(f"**{len(df_fil)} recurso(s) encontrado(s)**")
@@ -848,7 +853,7 @@ def modulo_restaurantes(dfs):
         rest_df["rating_medio"] = None
         rest_df["n_resenas"] = 0
 
-    municipios = ["Seleccione un municipio..."] + sorted(
+    municipios = [SELECT_MUNICIPIO, TODOS_MUNICIPIOS] + sorted(
         rest_df["municipio"].dropna().unique()
     )
 
@@ -856,11 +861,14 @@ def modulo_restaurantes(dfs):
 
     formulario_nuevo_restaurante()
 
-    if muni == "Seleccione un municipio...":
+    if muni == SELECT_MUNICIPIO:
         st.info("Seleccione un municipio para consultar los restaurantes disponibles.")
         return
 
-    df_fil = rest_df[rest_df["municipio"] == muni].copy()
+    df_fil = rest_df.copy()
+
+    if muni != TODOS_MUNICIPIOS:
+        df_fil = df_fil[df_fil["municipio"] == muni]
 
     df_fil = df_fil.sort_values(
         "rating_medio",
@@ -869,7 +877,10 @@ def modulo_restaurantes(dfs):
     )
 
     if df_fil.empty:
-        st.info("No hay restaurantes registrados para el municipio seleccionado.")
+        if muni == TODOS_MUNICIPIOS:
+            st.info("No hay restaurantes registrados.")
+        else:
+            st.info("No hay restaurantes registrados para el municipio seleccionado.")
         return
 
     st.markdown(f"**{len(df_fil)} restaurante(s) encontrado(s)**")
