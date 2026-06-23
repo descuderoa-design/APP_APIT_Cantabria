@@ -282,7 +282,7 @@ def inject_css():
 
     .app-title {
         color: #004EA8;
-        font-size: 1.95rem;
+        font-size: 1.45rem;
         font-weight: 800;
         line-height: 1.15;
         margin: 1rem 0 0.45rem;
@@ -970,8 +970,7 @@ def render_header():
     st.image("logo_apit.png", width=92)
     st.markdown(
         """
-        <h1 class="app-title">App de Recursos y Restaurantes</h1>
-        <p class="app-subtitle">De guías para guías</p>
+        <h1 class="app-title">Una base de datos<br>de guías para guías</h1>
         <p class="app-meta">Recursos turísticos · Restaurantes · Experiencias</p>
         """,
         unsafe_allow_html=True,
