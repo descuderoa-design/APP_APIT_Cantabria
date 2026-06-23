@@ -127,6 +127,23 @@ def normalize_rating(value) -> int:
     return max(0, min(5, int(round(rating))))
 
 
+def normalize_day_name(value: str) -> str:
+    replacements = {
+        "á": "a",
+        "é": "e",
+        "í": "i",
+        "ó": "o",
+        "ú": "u",
+        "ü": "u",
+    }
+    text = str(value).strip().lower()
+
+    for source, target in replacements.items():
+        text = text.replace(source, target)
+
+    return text
+
+
 DIAS_ES = {
     0: "lunes",
     1: "martes",
@@ -237,15 +254,19 @@ def fila_es_fecha(row: pd.Series, fecha: date) -> bool:
     if pd.notna(fin) and fecha > fin.date():
         return False
 
-    dias_str = str(row.get("dias_semana", "") or "").strip().lower()
+    dias_value = row.get("dias_semana", "")
+    dias_str = "" if pd.isna(dias_value) else str(dias_value).strip().lower()
 
     if dias_str:
-        dia = DIAS_ES[fecha.weekday()]
+        dia = normalize_day_name(DIAS_ES[fecha.weekday()])
         dias = [
-            d.strip()
+            normalize_day_name(d)
             for d in re.split(r"\s*(?:-|,|;|/|\by\b)\s*", dias_str)
             if d.strip()
         ]
+
+        if any(d in {"todos", "diario", "diaria", "todos los dias"} for d in dias):
+            return True
 
         if dia not in dias:
             return False
