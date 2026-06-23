@@ -1,6 +1,6 @@
 """
-Centro de Recursos APIT Cantabria
-Recursos turísticos · Restaurantes · Experiencias
+App de Recursos APIT Cantabria
+Recursos turísticos y Restaurantes
 """
 
 import streamlit as st
@@ -60,7 +60,7 @@ def limpiar(valor) -> str:
 def mensaje_error_envio():
     st.error(
         "No ha sido posible enviar la información. "
-        "Inténtelo de nuevo más tarde o contacte con APIT Cantabria."
+        "Inténtalo de nuevo más tarde o contacta con APIT Cantabria."
     )
 
 
@@ -147,8 +147,8 @@ def cabecera():
 
     st.markdown(
         """
-        <div class="apit-title">APIT Cantabria</div>
-        <div class="apit-subtitle">Centro de Recursos para Guías Oficiales</div>
+        <div class="apit-title">App de Recursos y Restaurantes</div>
+        <div class="apit-subtitle">De guías para guías</div>
         <div class="apit-small">Recursos turísticos · Restaurantes · Experiencias</div>
         """,
         unsafe_allow_html=True,
