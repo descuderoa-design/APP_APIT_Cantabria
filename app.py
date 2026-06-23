@@ -145,6 +145,27 @@ def normalize_day_name(value: str) -> str:
     return text
 
 
+def parse_date_list(value) -> set[date]:
+    if pd.isna(value):
+        return set()
+
+    fechas = set()
+    parts = re.split(r"[,;\n]+", str(value))
+
+    for part in parts:
+        text = part.strip()
+
+        if not text:
+            continue
+
+        parsed = pd.to_datetime(text, dayfirst=True, errors="coerce")
+
+        if pd.notna(parsed):
+            fechas.add(parsed.date())
+
+    return fechas
+
+
 DIAS_ES = {
     0: "lunes",
     1: "martes",
@@ -251,6 +272,11 @@ def load_data():
 def fila_es_fecha(row: pd.Series, fecha: date) -> bool:
     inicio = row.get("fecha_inicio")
     fin = row.get("fecha_fin")
+
+    fechas_excluidas = parse_date_list(row.get("fechas_excluidas", ""))
+
+    if fecha in fechas_excluidas:
+        return False
 
     if pd.notna(inicio) and fecha < inicio.date():
         return False
