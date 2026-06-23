@@ -240,6 +240,9 @@ def load_data():
         if "rating" in df.columns:
             df["rating"] = pd.to_numeric(df["rating"], errors="coerce")
 
+        if "prioridad" in df.columns:
+            df["prioridad"] = pd.to_numeric(df["prioridad"], errors="coerce")
+
         dfs[key] = df
 
     return dfs
@@ -832,8 +835,18 @@ def modulo_recursos(dfs):
 
         if not contenido_fecha.empty and "bloque" in contenido_fecha.columns:
             bloques_html = ""
+            sort_cols = [
+                col for col in ["prioridad", "bloque", "subtipo"]
+                if col in contenido_fecha.columns
+            ]
 
-            for bloque_tipo, grupo in contenido_fecha.groupby("bloque"):
+            if sort_cols:
+                contenido_fecha = contenido_fecha.sort_values(
+                    sort_cols,
+                    na_position="last",
+                )
+
+            for bloque_tipo, grupo in contenido_fecha.groupby("bloque", sort=False):
                 for _, fila in grupo.iterrows():
                     bloques_html += build_bloque(
                         bloque_tipo,
