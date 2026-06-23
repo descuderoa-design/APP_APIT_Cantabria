@@ -41,6 +41,7 @@ REQUIRED_COLUMNS = {
 TRUE_VALUES = {"true", "verdadero", "si", "sí", "yes", "1", "x"}
 SELECT_MUNICIPIO = "Seleccione un municipio..."
 TODOS_MUNICIPIOS = "Todos"
+TODOS_RECURSOS = "Todos"
 
 
 # ─────────────────────────────────────────────
@@ -774,8 +775,6 @@ def modulo_recursos(dfs):
         )
         muni = st.selectbox("Municipio", municipios, key="rec_muni")
 
-    formulario_nuevo_recurso()
-
     if muni == SELECT_MUNICIPIO:
         st.markdown(
             '<div class="no-results">Seleccione un municipio para consultar los recursos disponibles.</div>',
@@ -791,11 +790,6 @@ def modulo_recursos(dfs):
     if muni != TODOS_MUNICIPIOS:
         df_fil = df_fil[df_fil["municipio"] == muni]
 
-    if "prioridad" in df_fil.columns:
-        df_fil = df_fil.sort_values(["prioridad", "recurso"])
-    else:
-        df_fil = df_fil.sort_values("recurso")
-
     if df_fil.empty:
         mensaje = (
             "No hay recursos registrados."
@@ -803,6 +797,26 @@ def modulo_recursos(dfs):
             else "No hay recursos registrados para el municipio seleccionado."
         )
         st.markdown(f'<div class="no-results">{mensaje}</div>', unsafe_allow_html=True)
+        return
+
+    recursos = [TODOS_RECURSOS] + sorted(df_fil["recurso"].dropna().unique())
+    recurso_sel = st.selectbox("Recurso", recursos, key="rec_recurso")
+
+    formulario_nuevo_recurso()
+
+    if recurso_sel != TODOS_RECURSOS:
+        df_fil = df_fil[df_fil["recurso"] == recurso_sel]
+
+    if "prioridad" in df_fil.columns:
+        df_fil = df_fil.sort_values(["prioridad", "recurso"])
+    else:
+        df_fil = df_fil.sort_values("recurso")
+
+    if df_fil.empty:
+        st.markdown(
+            '<div class="no-results">No hay información para el recurso seleccionado.</div>',
+            unsafe_allow_html=True,
+        )
         return
 
     st.markdown(f"**{len(df_fil)} recurso(s) encontrado(s)**")
