@@ -52,6 +52,10 @@ def html(s: str) -> str:
     return textwrap.dedent(s).strip()
 
 
+def esc_html_multiline(value) -> str:
+    return esc(value).replace("\n", "<br>")
+    
+
 def esc(value) -> str:
     if pd.isna(value):
         return ""
@@ -504,7 +508,7 @@ def build_bloque(bloque_tipo, subtipo, contenido, fuente):
         '<div class="bloque">'
         f'<div class="bloque-label">{esc(bloque_tipo)}</div>'
         f'<div class="bloque-subtipo">{esc(subtipo)}</div>'
-        f'<div class="bloque-contenido">{esc(contenido)}{fuente_html}</div>'
+        f'<div class="bloque-contenido">{esc_html_multiline(contenido)}{fuente_html}</div>'
         '</div>'
     )
 
